@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>neoascii</title>
-<meta name="version" content="1.0.1">
+<meta name="version" content="1.0.2">
 <meta name="application-name" content="neoascii">
 <style>
 /* ---------- tokens ---------- */
@@ -5550,6 +5550,16 @@ var App = (function () {
   var qLevel = 0;
   var QS = [1, 0.82, 0.66];        /* pixel scale only. It never changes the grid. */
   var frameEMA = 16, slowFor = 0, waveTimer = 0;
+  /* WHILE PAUSED THE PICTURE IS ONLY DRAWN WHEN IT CHANGES.
+     The loop used to repaint the same frame sixty times a second
+     for as long as a paused style was on screen. Nothing moved, but
+     the steady draw at a fixed rate makes some machines whistle,
+     and the brighter the picture the louder it gets, because a lit
+     cell draws more current than a dark one. Anything that alters
+     what should be on the stage raises this flag, the loop serves
+     it once, and then the machine is left alone. */
+  var needPaint = true;
+  function repaint() { needPaint = true; }
   var isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
   var wakeLock = null;
   var opened = false, hidden = false;
@@ -5758,6 +5768,9 @@ var App = (function () {
     clock = sec;
     try { media.currentTime = sec; } catch (e) { }
     waveWrap.setAttribute("aria-valuenow", Math.round(t * 100));
+    /* Dragging the wave while paused moves the frame, so the stage
+       has to be served even though nothing is playing. */
+    repaint();
     drawWave();
   }
   function scrubToX(clientX) {
@@ -5786,6 +5799,9 @@ var App = (function () {
   function halt() {
     wantPlay = false;
     media.pause();
+    /* A video hands over its settled frame a moment after the
+       pause, so the last frame is asked for once more. */
+    repaint();
     drawPlay();
   }
   function toggle() { if (media.paused) play(); else halt(); }
@@ -5811,6 +5827,10 @@ var App = (function () {
     stage.style.height = cssH + "px";
     dprScale = w / cssW;
     cam.setViewport(w, h);
+    /* Setting the width or height of a canvas clears it, and a
+       paused stage would stay blank until something else asked for
+       a frame. */
+    repaint();
     drawLcd(); drawWave();
   }
 
@@ -5917,6 +5937,7 @@ var App = (function () {
       if (pm.inkMode === "source") pm.inkMode = "mono";
     }
     applyChrome();
+    repaint();
     return pm;
   }
 
@@ -6531,21 +6552,33 @@ var App = (function () {
     lastFrame = now;
     if (state !== S.LIVE) return;
 
+    var running = !media.paused;
+
+    /* A hidden tab has nothing to show. Browsers slow this loop when
+       the page goes away but do not always stop it, and a window
+       behind another window was still driving the display. */
+    if (document.hidden) return;
+
     /* A track and a video have a playhead. A picture has no time of
        its own, so the clock simply runs, which is what makes
        SCRAMBLE move. */
     if (kind === "image") {
-      if (!media.paused) clock += dt;
+      if (running) clock += dt;
     } else {
       /* The media element is the master clock, with a local
          smoother. The smoother only chooses WHICH second to draw.
          What that second looks like never depends on the frame
          before it. */
-      if (!media.paused) clock += dt;
+      if (running) clock += dt;
       var at = media.currentTime, drift = at - clock;
       if (drift < -0.35 || drift > 0.35) clock = at;
       else clock += drift * Math.min(1, dt * 3);
     }
+
+    /* Paused and nothing has changed: there is nothing to draw, so
+       draw nothing. The wave still gets its turn below. */
+    if (!running && !needPaint) { serveWave(dt); return; }
+    needPaint = false;
 
     var t0 = performance.now();
     cam.setViewport(stage.width, stage.height);
@@ -6553,14 +6586,25 @@ var App = (function () {
 
     /* If the device cannot keep up, drop the PIXEL size. The grid
        is measured in columns, so fewer pixels give a softer picture
-       and never a different one. */
-    var cost = performance.now() - t0;
-    frameEMA = frameEMA * 0.9 + cost * 0.1;
-    if (frameEMA > 26 && qLevel < QS.length - 1) {
-      slowFor += dt;
-      if (slowFor > 2) { qLevel++; slowFor = 0; frameEMA = 16; resize(); }
-    } else if (frameEMA < 20) slowFor = 0;
+       and never a different one. A paused frame is not timed: it is
+       drawn once and the cost of one cold frame says nothing about
+       whether the machine can hold a rate. */
+    if (running) {
+      var cost = performance.now() - t0;
+      frameEMA = frameEMA * 0.9 + cost * 0.1;
+      if (frameEMA > 26 && qLevel < QS.length - 1) {
+        slowFor += dt;
+        if (slowFor > 2) { qLevel++; slowFor = 0; frameEMA = 16; resize(); }
+      } else if (frameEMA < 20) slowFor = 0;
+    }
 
+    serveWave(dt);
+  }
+
+  /* The playhead marker on the wave moves with the track, so it is
+     redrawn while it plays and left alone while it does not. */
+  function serveWave(dt) {
+    if (media.paused) return;
     waveTimer += dt;
     if (waveTimer > 0.1) { waveTimer = 0; drawWave(); }
   }
@@ -6854,6 +6898,19 @@ var App = (function () {
     videoEl.addEventListener("play", function () { lastFrame = 0; drawPlay(); });
     videoEl.addEventListener("pause", drawPlay);
     videoEl.addEventListener("loadedmetadata", function () { Asciify.setSource(videoEl); });
+    /* A paused video still hands over a frame of its own accord —
+       after a seek, and once a decode settles. The styles built on
+       the picture have to be told, or a paused stage keeps the
+       frame it had before. */
+    videoEl.addEventListener("seeked", repaint);
+    videoEl.addEventListener("loadeddata", repaint);
+    audioEl.addEventListener("seeked", repaint);
+    /* Coming back to the tab: the clock is picked up from the media
+       element rather than run on from the last frame before it went
+       away, and the stage is served once. */
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) { lastFrame = 0; repaint(); }
+    });
     window.addEventListener("beforeunload", function () {
       if (objUrl) URL.revokeObjectURL(objUrl);
     });
