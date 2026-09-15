@@ -1,6 +1,6 @@
 # neoascii
 
-**v1.0.1** · Turn a song, a video or a photo into moving text art,
+**v1.0.2** · Turn a song, a video or a photo into moving text art,
 then export it as an MP4 — all in one HTML file, entirely offline.
 
 neoascii rebuilds pictures and music out of typed characters. Feed it a
@@ -31,7 +31,7 @@ file, open it in a browser, and it works with the network switched off.
 
 ## Quick start
 
-1. Download `neoascii-v1.0.1.html`.
+1. Download `neoascii-v1.0.2.html`.
 2. Open it in a browser — double-click it, or drag it onto a window.
 3. Press the **+**, choose a file, and press the arrows to try styles.
 4. Press the display in the middle to open the controls.
@@ -311,7 +311,7 @@ python3 build.py
 ```
 
 Concatenates `parts/` in dependency order into
-`neoascii-v1.0.1.html` and writes `README.txt` and `README.md` with the
+`neoascii-v1.0.2.html` and writes `README.txt` and `README.md` with the
 version substituted in. No toolchain, no package manager, no minifier.
 
 To change the version, edit `VER` at the top of `build.py`. The HTML
@@ -386,6 +386,7 @@ build.
 
 | Version | Changes |
 |---|---|
+| **1.0.2** | A paused stage is now drawn only when something changes it, instead of being redrawn sixty times a second. The loop also stops while the tab is hidden. This removes a high-pitched whine some machines made on bright styles |
 | **1.0.1** | Renamed to lowercase `neoascii`; browser tab now shows the name alone, with no version number |
 | **1.0** | Full code review. Fixed a window resize during a render resizing the canvas being encoded; both muxers now stream into the `Blob` instead of holding the whole film twice; removed unreachable code. `README.txt` dropped in favour of this file |
 | **0.9.9** | Grid controls moved to the top of their tab; `KALEIDOSCOPE` added beside `SYMMETRY`; 6-fold symmetry removed |
@@ -404,4 +405,4 @@ build.
 
 ---
 
-<sub>neoascii v1.0.1 — one file, no accounts, nothing uploaded.</sub>
+<sub>neoascii v1.0.2 — one file, no accounts, nothing uploaded.</sub>
